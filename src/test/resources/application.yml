@@ -1,0 +1,9 @@
+spring:
+  kafka:
+    bootstrap-servers: ${spring.embedded.kafka.brokers}
+kafkaconfig:
+  topic: test-topic
+  groupId: test-group
+  partitionCount: 1
+  retries: 3
+  autoCommitEnabled: false
