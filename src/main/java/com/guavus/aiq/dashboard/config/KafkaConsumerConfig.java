@@ -1,10 +1,12 @@
 package com.guavus.aiq.dashboard.config;
 
+import com.guavus.aiq.dashboard.utils.ModelConverter;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import reactor.core.publisher.Flux;
@@ -76,6 +78,6 @@ public class KafkaConsumerConfig {
                                      Duration.ofSeconds(Integer.parseInt(kafkaProps.getBackoff())))
                        .doOnNext(msg -> msg.receiverOffset().acknowledge())
                        .share()
-                       .cache(Duration.ofHours(kafkaProps.getRetention()));
+                       .cache(Duration.ofSeconds(60L));
     }
 }

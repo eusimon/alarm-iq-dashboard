@@ -6,7 +6,7 @@ import com.guavus.aiq.dashboard.models.BucketModel;
 import reactor.core.publisher.Flux;
 
 /**
- * Ria tuples repository interface definition.
+ * Bucket service interface definition.
  *
  * @author Eugene Simon
  * @since June 19th, 2019

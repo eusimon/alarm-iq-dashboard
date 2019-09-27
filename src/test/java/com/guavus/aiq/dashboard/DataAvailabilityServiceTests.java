@@ -7,9 +7,11 @@ import com.guavus.aiq.dashboard.model.DummyOffset;
 import com.guavus.aiq.dashboard.model.Message;
 import com.guavus.aiq.dashboard.models.BinModel;
 import com.guavus.aiq.dashboard.models.BucketModel;
+import com.guavus.aiq.dashboard.models.Interval;
 import com.guavus.aiq.dashboard.services.BucketService;
+import com.guavus.aiq.dashboard.services.DataAvailabilityService;
+import com.guavus.aiq.dashboard.services.impl.BucketDataAvailabilityServiceImpl;
 import com.guavus.aiq.dashboard.services.impl.BucketServiceImpl;
-import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.junit.After;
@@ -32,14 +34,12 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
-
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
+import java.util.stream.Stream;
 
 @RunWith(SpringRunner.class)
-@SpringBootTest(classes = {KafkaTestDashboardConfig.class}, properties = {"spring.main.allow-bean-definition-overriding=true"})
-public class BucketServiceTests {
-    private static final Logger LOG = LoggerFactory.getLogger(BucketServiceTests.class);
+@SpringBootTest(properties = {"spring.main.allow-bean-definition-overriding=true"})
+public class DataAvailabilityServiceTests {
+    private static final Logger LOG = LoggerFactory.getLogger(DataAvailabilityServiceTests.class);
 
     @Value("${kafkaconfig.topic}")
     private String topic;
@@ -54,21 +54,32 @@ public class BucketServiceTests {
     public void tearDown() {
     }
 
+    /*
+    - generate receiver flux with duplicates
+    - inject into the service
+    - verify accumulated size
+    - verify intervals
+
+     */
+
+
     @Test
-    public void testGetBucketStream_valid() {
+    public void testDataAvailabilityStream() {
         // Prepare data
-        List<Pair<String, Long>> source = Arrays.asList(Pair.of(AlarmType.ALARM_PREDICTED.getUiType(), 1L),
-                                                        Pair.of(AlarmType.ALARM_INGESTED.getUiType(), 2L),
-                                                        Pair.of(AlarmType.ALARM_DISCARDED.getUiType(), 3L),
-                                                        Pair.of(AlarmType.DUMMY.getUiType(), 4L));
-        List<Message> messages = generate(source);
+        LocalDateTime now = LocalDateTime.now();
+        List<LocalDateTime> units = Stream.of(300, 250, 200, 200, 150, 150, 100)
+                                          .map(now::minusSeconds)
+                                          .collect(Collectors.toList());
+
+        List<Message> messages = generate(units);
         // Inject and get
-        BucketService service = new BucketServiceImpl(generateReceiverFlux(messages));
+        DataAvailabilityService service = new BucketDataAvailabilityServiceImpl(generateReceiverFlux(messages));
         // Verify
-        StepVerifier.create(service.getBucketsStream().map(BucketModel::getType))
-                    .expectNextSequence(messages.stream()
-                                                .map(msg -> AlarmType.fromUiType(msg.getAlarmType()))
-                                                .collect(Collectors.toList()))
+        List<Interval> expected = units.stream()
+                                       .map(ts -> new Interval(now.minusSeconds(300), ts))
+                                       .collect(Collectors.toList());
+        StepVerifier.create(service.getBucketDataAvailability())
+                    .expectNextSequence(expected)
                     .expectComplete()
                     .verify();
     }
@@ -80,7 +91,7 @@ public class BucketServiceTests {
                                                         Pair.of("wrong-type", 2L),
                                                         Pair.of(AlarmType.ALARM_DISCARDED.getUiType(), 3L),
                                                         Pair.of(AlarmType.DUMMY.getUiType(), 4L));
-        List<Message> messages = generate(source);
+        List<Message> messages = generateMessages(source);
         // Inject and get
         BucketService service = new BucketServiceImpl(generateReceiverFlux(messages));
 
@@ -91,50 +102,6 @@ public class BucketServiceTests {
                     .verify();
     }
 
-    @Test
-    public void testGetBins_binSize_25() {
-        Integer binSize = 25; int count = 10;
-        LocalDateTime ts = LocalDateTime.parse("2019-09-15T10:00:00.000");
-        List<Message> messages = generate(ts, 10, count);
-
-        // Inject and get
-        BucketService service = new BucketServiceImpl(generateReceiverFlux(messages));
-        List<BinModel> bins = service.getBinsStream(binSize).collectList().block();
-
-        // verify non-empty
-        assertTrue(bins != null && !bins.isEmpty());
-        // verify interval sizes
-        bins.forEach(bin -> assertEquals(binSize.longValue(), bin.getInterval().getTo() - bin.getInterval().getFrom()));
-        // verify bin map sizes
-        assertEquals(12, bins.stream().map(bin -> bin.getBin().size()).reduce(0, Integer::sum).intValue());
-        // verify event counts for each event type
-        String countsPattern = StringUtils.join(Arrays.asList(3, 3, 2, 2), ",");
-        assertEquals(countsPattern, StringUtils.join(getEventCounts(bins, AlarmType.ALARM_DISCARDED), ","));
-        assertEquals(countsPattern, StringUtils.join(getEventCounts(bins, AlarmType.ALARM_PREDICTED), ","));
-        assertEquals(countsPattern, StringUtils.join(getEventCounts(bins, AlarmType.ALARM_INGESTED), ","));
-    }
-
-    @Test
-    public void testGetBins_binSize_35() {
-        Integer binSize = 35; int count = 10;
-        LocalDateTime ts = LocalDateTime.parse("2019-09-15T10:00:00.000");
-        List<Message> messages = generate(ts, 10, count);
-        // Inject and get
-        BucketService service = new BucketServiceImpl(generateReceiverFlux(messages));
-        List<BinModel> bins = service.getBinsStream(binSize).collectList().block();
-
-        // verify non-empty
-        assertTrue(bins != null && !bins.isEmpty());
-        // verify interval sizes
-        bins.forEach(bin -> assertEquals(binSize.longValue(), bin.getInterval().getTo() - bin.getInterval().getFrom()));
-        // verify bin map sizes
-        assertEquals(9, bins.stream().map(bin -> bin.getBin().size()).reduce(0, Integer::sum).intValue());
-        // verify event counts for each event type
-        String countsPattern = StringUtils.join(Arrays.asList(4, 4, 2), ",");
-        assertEquals(countsPattern, StringUtils.join(getEventCounts(bins, AlarmType.ALARM_DISCARDED), ","));
-        assertEquals(countsPattern, StringUtils.join(getEventCounts(bins, AlarmType.ALARM_PREDICTED), ","));
-        assertEquals(countsPattern, StringUtils.join(getEventCounts(bins, AlarmType.ALARM_INGESTED), ","));
-    }
 
     private String convertToString(Object message) {
         try {
@@ -145,9 +112,15 @@ public class BucketServiceTests {
         }
     }
 
-    private List<Message> generate(List<Pair<String, Long>> typesAndCounts) {
+    private List<Message> generateMessages(List<Pair<String, Long>> typesAndCounts) {
         return typesAndCounts.stream()
                              .map(pair -> new Message(Instant.now().getEpochSecond(), pair.getLeft(), pair.getRight()))
+                             .collect(Collectors.toList());
+    }
+
+    private List<Message> generate(List<LocalDateTime> units) {
+        return units.stream()
+                    .map(unit -> new Message(unit.toInstant(ZoneOffset.UTC).getEpochSecond(), AlarmType.ALARM_PREDICTED.getUiType(), 1L))
                              .collect(Collectors.toList());
     }
 
@@ -173,11 +146,5 @@ public class BucketServiceTests {
                                       .map(rec -> new ReceiverRecord<>(rec, new DummyOffset()))
                                       .collect(Collectors.toList()).stream())
                    .log();
-    }
-
-    private List<Long> getEventCounts(List<BinModel> bins, AlarmType type) {
-        return bins.stream()
-                   .map(bin -> bin.getBin().get(type.getUiType()))
-                   .collect(Collectors.toList());
     }
 }

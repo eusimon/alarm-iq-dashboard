@@ -1,4 +1,4 @@
-package com.guavus.aiq.dashboard.services;
+package com.guavus.aiq.dashboard.services.impl;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.guavus.aiq.dashboard.enums.AlarmType;
@@ -6,6 +6,8 @@ import com.guavus.aiq.dashboard.models.BinModel;
 import com.guavus.aiq.dashboard.models.BucketModel;
 import com.guavus.aiq.dashboard.models.BucketState;
 import com.guavus.aiq.dashboard.models.Interval;
+import com.guavus.aiq.dashboard.services.BucketService;
+import com.guavus.aiq.dashboard.utils.ModelConverter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -36,30 +38,23 @@ public class BucketServiceImpl implements BucketService {
         this.bucketReceiver = bucketReceiver;
     }
 
+    @Override
     public Flux<BucketModel> getBucketsStream() {
         return Flux.from(bucketReceiver)
                    .doOnError(ex -> LOG.error("Kafka error, message: {}", ex.getMessage()))
-                   .map(rec -> convert(rec.value()));
+                   .map(rec -> ModelConverter.convertToBucket(rec.value()));
     }
 
+    @Override
     public Flux<BinModel> getBinsStream(int binSize) {
         return Flux.from(bucketReceiver)
                    .doOnError(ex -> LOG.error("Kafka error, message: {}", ex.getMessage()))
-                   .map(rec -> convert(rec.value()))
+                   .map(rec -> ModelConverter.convertToBucket(rec.value()))
                    .scan(getInitialState(), (state, current) -> getBucketState(state, current, binSize))
                    .filter(state -> AlarmType.getSupportedTypes().contains(state.getBucket().getType()))
                    .bufferUntil(BucketState::hasDelimiter, true)
                    .map(this::toBinModel)
                    .log();
-    }
-
-    private BucketModel convert(String payload) {
-        try {
-            return mapper.readValue(payload, BucketModel.class);
-        } catch (IOException ex) {
-            LOG.error("Failed to convert payload [{}]. Error: {}", payload, ex.getMessage());
-            return new BucketModel(0L, "dummy", 0L);
-        }
     }
 
     private BucketState getInitialState() {

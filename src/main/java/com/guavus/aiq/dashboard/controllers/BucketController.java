@@ -41,11 +41,12 @@ public class BucketController {
         return bucketService.getBinsStream(30);
     }
 
-    // TODO: implement data availability
+    // TODO: implement data availability + tests
     // TODO: integrate OAuth
     // TODO: add health/version endpoints
     // TODO: configure swagger
     // TODO: wrap into a container
     // TODO: externalize configuration (K8s configmap or git-based config server)
     // TODO: integrate metrics
+    // TODO: see https://projectreactor.io/docs/core/release/reference/#_asynchronous_but_single_threaded_push for possible refactoring
 }
